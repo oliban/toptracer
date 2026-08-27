@@ -25,8 +25,8 @@ export const DEFAULT_FILTER: FilterOptions = {
     k: 1.5,
     minShots: 8,
     filterLateral: false,
-    maxOffline: 30,
-    shortfallPct: 25,
+    maxOffline: 45,
+    shortfallPct: 40,
   },
 };
 

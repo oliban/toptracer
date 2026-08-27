@@ -16,7 +16,7 @@ interface DashboardProps {
 
 const DEFAULT_FILTER: FilterOptions = {
   metric: 'flatCarry',
-  cleanHit: { enabled: true, mode: 'iqr', k: 1.5, minShots: 8, filterLateral: false, maxOffline: 30, shortfallPct: 25 },
+  cleanHit: { enabled: true, mode: 'iqr', k: 1.5, minShots: 8, filterLateral: false, maxOffline: 45, shortfallPct: 40 },
 };
 
 type Tab = 'overview' | 'gapping' | 'dispersion' | 'sessions';
