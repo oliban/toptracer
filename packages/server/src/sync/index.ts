@@ -47,12 +47,13 @@ const str = (s: string | null | undefined): string | null =>
 
 // ---- upserts ----
 
-export function upsertClub(db: Database.Database, club: Club): void {
+export function upsertClub(db: Database.Database, userId: string, club: Club): void {
   db.prepare(
     `INSERT OR REPLACE INTO clubs
-      (id, club_display_name, category, nickname, display_order, avg_carry, avg_total)
-     VALUES (@id, @club_display_name, @category, @nickname, @display_order, @avg_carry, @avg_total)`
+      (user_id, id, club_display_name, category, nickname, display_order, avg_carry, avg_total)
+     VALUES (@user_id, @id, @club_display_name, @category, @nickname, @display_order, @avg_carry, @avg_total)`
   ).run({
+    user_id: userId,
     id: club.id,
     club_display_name: club.clubDisplayName,
     category: club.category,
@@ -63,12 +64,13 @@ export function upsertClub(db: Database.Database, club: Club): void {
   });
 }
 
-export function upsertSession(db: Database.Database, session: Session): void {
+export function upsertSession(db: Database.Database, userId: string, session: Session): void {
   db.prepare(
     `INSERT OR REPLACE INTO sessions
-      (id, game_mode, range_name, begin_ts, ts, traced_shots, has_lm_stats, raw_json)
-     VALUES (@id, @game_mode, @range_name, @begin_ts, @ts, @traced_shots, @has_lm_stats, @raw_json)`
+      (user_id, id, game_mode, range_name, begin_ts, ts, traced_shots, has_lm_stats, raw_json)
+     VALUES (@user_id, @id, @game_mode, @range_name, @begin_ts, @ts, @traced_shots, @has_lm_stats, @raw_json)`
   ).run({
+    user_id: userId,
     id: session.id,
     game_mode: session.gameMode,
     range_name: str(session.rangeName),
@@ -80,17 +82,18 @@ export function upsertSession(db: Database.Database, session: Session): void {
   });
 }
 
-export function upsertShot(db: Database.Database, shot: Shot): void {
+export function upsertShot(db: Database.Database, userId: string, shot: Shot): void {
   db.prepare(
     `INSERT OR REPLACE INTO shots
-      (id, session_id, shot_index, game_mode, club_type, club_display_name, club_category,
+      (user_id, id, session_id, shot_index, game_mode, club_type, club_display_name, club_category,
        is_hidden, carry, flat_carry, total, ball_speed, launch_angle, landing_angle, curve,
        height, hang_time, off_target_line, spin_rate, club_head_speed, smash_factor, raw_json)
      VALUES
-      (@id, @session_id, @shot_index, @game_mode, @club_type, @club_display_name, @club_category,
+      (@user_id, @id, @session_id, @shot_index, @game_mode, @club_type, @club_display_name, @club_category,
        @is_hidden, @carry, @flat_carry, @total, @ball_speed, @launch_angle, @landing_angle, @curve,
        @height, @hang_time, @off_target_line, @spin_rate, @club_head_speed, @smash_factor, @raw_json)`
   ).run({
+    user_id: userId,
     id: shot.id,
     session_id: shot.sessionId,
     shot_index: shot.shotIndex,
@@ -118,9 +121,9 @@ export function upsertShot(db: Database.Database, shot: Shot): void {
 
 // ---- sync ----
 
-/** Map of stored session id -> traced_shots, used to detect new/changed sessions. */
-function storedSessionShotCounts(db: Database.Database): Map<string, number | null> {
-  const rows = db.prepare(`SELECT id, traced_shots FROM sessions`).all() as Array<{
+/** Map of stored session id -> traced_shots for a user, to detect new/changed sessions. */
+function storedSessionShotCounts(db: Database.Database, userId: string): Map<string, number | null> {
+  const rows = db.prepare(`SELECT id, traced_shots FROM sessions WHERE user_id = ?`).all(userId) as Array<{
     id: string;
     traced_shots: number | null;
   }>;
@@ -138,6 +141,7 @@ function storedSessionShotCounts(db: Database.Database): Map<string, number | nu
  */
 export async function syncAll(
   client: SyncClient,
+  userId: string,
   opts?: { gameModes?: readonly string[]; full?: boolean }
 ): Promise<{ sessions: number; shots: number; clubs: number; newSessions: number; skipped: number }> {
   const modes = opts?.gameModes ?? DEFAULT_GAME_MODES;
@@ -149,7 +153,7 @@ export async function syncAll(
   let skipped = 0;
   let totalSessionsSeen = 0;
 
-  const stored = storedSessionShotCounts(db);
+  const stored = storedSessionShotCounts(db, userId);
 
   for (const mode of modes) {
     try {
@@ -178,15 +182,15 @@ export async function syncAll(
 
       const write = db.transaction(() => {
         for (const club of clubs) {
-          upsertClub(db, club);
+          upsertClub(db, userId, club);
           clubIds.add(club.id);
         }
         for (const { session, shots } of toFetch) {
           const isNew = !stored.has(session.id);
-          upsertSession(db, session);
+          upsertSession(db, userId, session);
           if (isNew) newSessions++;
           for (const shot of shots) {
-            upsertShot(db, shot);
+            upsertShot(db, userId, shot);
             shotIds.add(shot.id);
           }
         }
@@ -305,26 +309,26 @@ function mapShot(r: ShotRow): Shot {
   };
 }
 
-export function getClubs(): Club[] {
+export function getClubs(userId: string): Club[] {
   const db = resolveDb();
   const rows = db
-    .prepare(`SELECT * FROM clubs ORDER BY display_order ASC`)
-    .all() as ClubRow[];
+    .prepare(`SELECT * FROM clubs WHERE user_id = ? ORDER BY display_order ASC`)
+    .all(userId) as ClubRow[];
   return rows.map(mapClub);
 }
 
-export function getSessions(): Session[] {
+export function getSessions(userId: string): Session[] {
   const db = resolveDb();
   const rows = db
-    .prepare(`SELECT * FROM sessions ORDER BY ts DESC`)
-    .all() as SessionRow[];
+    .prepare(`SELECT * FROM sessions WHERE user_id = ? ORDER BY ts DESC`)
+    .all(userId) as SessionRow[];
   return rows.map(mapSession);
 }
 
-export function getShots(): Shot[] {
+export function getShots(userId: string): Shot[] {
   const db = resolveDb();
   const rows = db
-    .prepare(`SELECT * FROM shots ORDER BY session_id ASC, shot_index ASC`)
-    .all() as ShotRow[];
+    .prepare(`SELECT * FROM shots WHERE user_id = ? ORDER BY session_id ASC, shot_index ASC`)
+    .all(userId) as ShotRow[];
   return rows.map(mapShot);
 }

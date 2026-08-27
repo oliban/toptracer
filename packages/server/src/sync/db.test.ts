@@ -13,6 +13,7 @@ import {
 } from './index.js';
 
 let db: Database.Database;
+const U = 'user-1';
 
 const sampleClubs: Club[] = [
   {
@@ -131,9 +132,9 @@ const sampleShots: Shot[] = [
 beforeEach(() => {
   db = openDbAt(':memory:');
   _setTestDb(db);
-  for (const c of sampleClubs) upsertClub(db, c);
-  for (const s of sampleSessions) upsertSession(db, s);
-  for (const s of sampleShots) upsertShot(db, s);
+  for (const c of sampleClubs) upsertClub(db, U, c);
+  for (const s of sampleSessions) upsertSession(db, U, s);
+  for (const s of sampleShots) upsertShot(db, U, s);
 });
 
 afterEach(() => {
@@ -143,7 +144,7 @@ afterEach(() => {
 
 describe('sync db round-trip', () => {
   it('round-trips clubs ordered by displayOrder, preserving nulls', () => {
-    const clubs = getClubs();
+    const clubs = getClubs(U);
     expect(clubs.map((c) => c.id)).toEqual(['club-7i', 'club-driver']);
     const iron = clubs[0];
     expect(iron.nickname).toBeNull();
@@ -154,7 +155,7 @@ describe('sync db round-trip', () => {
   });
 
   it('round-trips sessions ordered by ts desc, with boolean and null handling', () => {
-    const sessions = getSessions();
+    const sessions = getSessions(U);
     expect(sessions.map((s) => s.id)).toEqual(['sess-b', 'sess-a']);
     const b = sessions[0];
     expect(b.hasLaunchMonitorStats).toBe(true);
@@ -168,7 +169,7 @@ describe('sync db round-trip', () => {
   });
 
   it('round-trips shots ordered by session_id, shot_index, with boolean and null handling', () => {
-    const shots = getShots();
+    const shots = getShots(U);
     expect(shots.map((s) => s.id)).toEqual(['shot-2', 'shot-1', 'shot-3']);
     const hidden = shots[0];
     expect(hidden.isHidden).toBe(true);
@@ -185,8 +186,8 @@ describe('sync db round-trip', () => {
   });
 
   it('INSERT OR REPLACE upserts by id', () => {
-    upsertClub(db, { ...sampleClubs[0], nickname: 'Updated' });
-    const clubs = getClubs();
+    upsertClub(db, U, { ...sampleClubs[0], nickname: 'Updated' });
+    const clubs = getClubs(U);
     expect(clubs).toHaveLength(2);
     expect(clubs.find((c) => c.id === 'club-driver')?.nickname).toBe('Updated');
   });

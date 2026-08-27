@@ -56,14 +56,18 @@ fly deploy
   refresh token live there and survive deploys.
 - **Memory:** 1 GB — headless Chromium needs the headroom.
 
-### Security — read before deploying publicly
-This app has **no built-in user accounts** and the login flow sends your Toptracer password
-through the backend. On a public URL that means anyone who finds it could reach the login page
-and your cached shot data. Mitigations:
-- **Always set `APP_PASSWORD`** (a fly secret) — it enables HTTP Basic Auth on every request,
-  so the browser prompts for a password before anything loads.
-- Consider keeping the app private (fly private networking / `fly proxy` for on-demand access)
-  if you don't want it internet-reachable at all.
-- It remains a **single-user** tool: one cached account per deployment.
+### Multi-user model & security
+The app is **multi-tenant**: each visitor logs in with their **own** Toptracer Range
+credentials and sees only their own data. There is no shared front-door password — a person's
+own Toptracer login is the gate.
+- **Per-user sessions:** login sets an HTTP-only, `Secure`, `SameSite=Lax` session cookie
+  (30-day) mapped to that user server-side.
+- **Data isolation:** every session/shot/club row is keyed by the user's Toptracer id; all
+  queries are scoped to the logged-in user.
+- **Tokens:** each user's Toptracer refresh token is stored server-side (on the encrypted
+  `/data` volume) so they stay logged in; logout drops the token (keeps their cached shots).
+- **Passwords** are used once, in memory, to complete each user's OAuth login — never stored
+  or logged.
 
-Run `fly deploy` yourself when ready — it is not run automatically.
+Run `fly deploy` yourself when ready — it is not run automatically. (The old single-user
+`APP_PASSWORD` gate has been removed; you can `fly secrets unset APP_PASSWORD`.)

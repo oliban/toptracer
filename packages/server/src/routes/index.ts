@@ -1,19 +1,33 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import * as auth from '../auth/index.js';
 import { ToptracerGraphQLClient } from '../graphql/index.js';
 import { syncAll, getClubs, getSessions, getShots } from '../sync/index.js';
 import { computeGapping, DEFAULT_FILTER } from '../stats/index.js';
 import { computeOverview } from '../stats/overview.js';
+import {
+  upsertUser,
+  getUser,
+  createSession,
+  getSessionUser,
+  deleteSession,
+  clearRefreshToken,
+} from '../store/users.js';
 import type { FilterOptions, UserProfile } from '../types.js';
 
-const client = new ToptracerGraphQLClient(() => auth.getAccessToken());
+const SID_COOKIE = 'sid';
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days, seconds
+const secureCookie = process.env.NODE_ENV === 'production';
 
-async function currentProfile(): Promise<UserProfile | null> {
-  try {
-    return await client.getUser();
-  } catch {
-    return null;
-  }
+function clientFor(userId: string): ToptracerGraphQLClient {
+  return new ToptracerGraphQLClient(() => auth.getAccessTokenForUser(userId));
+}
+
+/** The logged-in user's id from the session cookie, or null. */
+function currentUserId(req: FastifyRequest): string | null {
+  const sid = (req.cookies as Record<string, string> | undefined)?.[SID_COOKIE];
+  if (!sid) return null;
+  return getSessionUser(sid, Date.now());
 }
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -23,55 +37,106 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ ok: false, error: 'email and password required' });
     }
     try {
-      await auth.login(email, password);
-      const profile = await currentProfile();
-      return reply.send({ ok: true, profile });
+      const { userId, accessToken, refreshToken } = await auth.performLogin(email, password);
+
+      // Fetch the profile once with the fresh access token.
+      let profile: UserProfile | null = null;
+      try {
+        const client = new ToptracerGraphQLClient(() => Promise.resolve(accessToken));
+        profile = await client.getUser();
+      } catch {
+        profile = null;
+      }
+
+      upsertUser({
+        userId,
+        email: profile?.email ?? email,
+        profileName: profile?.profileName ?? null,
+        refreshToken,
+        obtainedAt: Date.now(),
+      });
+
+      const sid = randomUUID();
+      createSession(sid, userId, Date.now());
+      reply.setCookie(SID_COOKIE, sid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: secureCookie,
+        path: '/',
+        maxAge: SESSION_MAX_AGE,
+      });
+
+      return reply.send({
+        ok: true,
+        profile: profile ?? { id: userId, email, profileName: null, distanceUnit: null, speedUnit: null },
+      });
     } catch (err) {
-      req.log.warn('login failed'); // no secrets
+      req.log.warn('login failed'); // never log credentials
       return reply.code(401).send({ ok: false, error: 'Login failed. Check your Toptracer credentials.' });
     }
   });
 
-  app.get('/api/session', async () => {
-    const loggedIn = await auth.isLoggedIn();
-    if (!loggedIn) return { loggedIn: false };
-    const profile = await currentProfile();
-    return { loggedIn: !!profile, profile: profile ?? undefined };
+  app.get('/api/session', async (req) => {
+    const userId = currentUserId(req);
+    if (!userId) return { loggedIn: false };
+    const u = getUser(userId);
+    if (!u) return { loggedIn: false };
+    const profile: UserProfile = {
+      id: u.userId,
+      email: u.email,
+      profileName: u.profileName,
+      distanceUnit: null,
+      speedUnit: null,
+    };
+    return { loggedIn: true, profile };
   });
 
-  app.post('/api/logout', async () => {
-    await auth.logout();
+  app.post('/api/logout', async (req, reply) => {
+    const sid = (req.cookies as Record<string, string> | undefined)?.[SID_COOKIE];
+    const userId = currentUserId(req);
+    if (sid) deleteSession(sid);
+    if (userId) {
+      clearRefreshToken(userId); // keep cached shot data, drop the login token
+      auth.forgetUser(userId);
+    }
+    reply.clearCookie(SID_COOKIE, { path: '/' });
     return { ok: true };
   });
 
   app.post<{ Body: { gameModes?: string[]; full?: boolean } }>('/api/sync', async (req, reply) => {
-    if (!(await auth.isLoggedIn())) return reply.code(401).send({ error: 'not logged in' });
-    // Incremental by default (only new/changed sessions); pass { full: true } to re-fetch all.
-    const counts = await syncAll(client, { gameModes: req.body?.gameModes, full: req.body?.full });
+    const userId = currentUserId(req);
+    if (!userId) return reply.code(401).send({ error: 'not logged in' });
+    const counts = await syncAll(clientFor(userId), userId, {
+      gameModes: req.body?.gameModes,
+      full: req.body?.full,
+    });
     return counts;
   });
 
-  app.get('/api/clubs', async (_req, reply) => {
-    if (!(await auth.isLoggedIn())) return reply.code(401).send({ error: 'not logged in' });
-    return getClubs();
+  app.get('/api/clubs', async (req, reply) => {
+    const userId = currentUserId(req);
+    if (!userId) return reply.code(401).send({ error: 'not logged in' });
+    return getClubs(userId);
   });
 
-  app.get('/api/sessions', async (_req, reply) => {
-    if (!(await auth.isLoggedIn())) return reply.code(401).send({ error: 'not logged in' });
-    return getSessions();
+  app.get('/api/sessions', async (req, reply) => {
+    const userId = currentUserId(req);
+    if (!userId) return reply.code(401).send({ error: 'not logged in' });
+    return getSessions(userId);
   });
 
-  app.post<{ Body: FilterOptions }>('/api/gapping', async (req) => {
+  app.post<{ Body: FilterOptions }>('/api/gapping', async (req, reply) => {
+    const userId = currentUserId(req);
+    if (!userId) return reply.code(401).send({ error: 'not logged in' });
     const filter: FilterOptions = { ...DEFAULT_FILTER, ...(req.body ?? {}) };
-    const shots = getShots();
-    const clubs = getClubs();
-    // sessionId membership is handled inside computeGapping via opts.sessionIds
-    return computeGapping(shots, clubs, filter);
+    return computeGapping(getShots(userId), getClubs(userId), filter);
   });
 
-  app.post<{ Body: FilterOptions }>('/api/overview', async (req) => {
+  app.post<{ Body: FilterOptions }>('/api/overview', async (req, reply) => {
+    const userId = currentUserId(req);
+    if (!userId) return reply.code(401).send({ error: 'not logged in' });
     const filter: FilterOptions = { ...DEFAULT_FILTER, ...(req.body ?? {}) };
-    const g = computeGapping(getShots(), getClubs(), filter);
-    return computeOverview(g, getClubs(), getSessions(), Date.now());
+    const g = computeGapping(getShots(userId), getClubs(userId), filter);
+    return computeOverview(g, getClubs(userId), getSessions(userId), Date.now());
   });
 }

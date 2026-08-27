@@ -1,31 +1,17 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import { registerRoutes } from './routes/index.js';
 import { openDb } from './sync/db.js';
-import { SERVER_PORT, SERVER_HOST, APP_PASSWORD, WEB_DIST } from './config.js';
+import { SERVER_PORT, SERVER_HOST, WEB_DIST } from './config.js';
 
 async function main() {
   openDb(); // ensure DB + migrations before serving
   const app = Fastify({ logger: { level: 'info' } });
 
-  // Optional HTTP Basic Auth gate for public deployments (APP_PASSWORD set).
-  if (APP_PASSWORD) {
-    app.addHook('onRequest', async (req, reply) => {
-      const hdr = req.headers.authorization ?? '';
-      const [scheme, encoded] = hdr.split(' ');
-      let ok = false;
-      if (scheme === 'Basic' && encoded) {
-        const decoded = Buffer.from(encoded, 'base64').toString();
-        const pass = decoded.slice(decoded.indexOf(':') + 1);
-        ok = pass === APP_PASSWORD;
-      }
-      if (!ok) {
-        reply.header('WWW-Authenticate', 'Basic realm="Toptracer Range Analyzer"');
-        return reply.code(401).send('Authentication required');
-      }
-    });
-  }
-
+  // Multi-tenant: each visitor logs in with their own Toptracer account and gets a
+  // session cookie; there is no shared front-door password.
+  await app.register(cookie);
   await app.register(cors, {
     origin: [`http://localhost:5173`, `http://127.0.0.1:5173`],
     credentials: true,

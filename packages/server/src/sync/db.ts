@@ -26,21 +26,55 @@ export function openDb(): Database.Database {
   return singleton;
 }
 
+function hasColumn(db: Database.Database, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((r) => r.name === column);
+}
+
 export function migrate(db: Database.Database): void {
+  // Multi-tenant migration: the shot data tables gained a user_id. If an old
+  // single-user table exists without it, drop and recreate (cache re-syncs per user).
+  for (const t of ['sessions', 'shots', 'clubs']) {
+    const exists = (db
+      .prepare(`SELECT count(*) n FROM sqlite_master WHERE type='table' AND name=?`)
+      .get(t) as { n: number }).n > 0;
+    if (exists && !hasColumn(db, t, 'user_id')) db.exec(`DROP TABLE ${t}`);
+  }
+
   db.exec(`
+    -- One row per Toptracer user (keyed by JWT sub). Holds their refresh token.
+    CREATE TABLE IF NOT EXISTS users (
+      user_id TEXT PRIMARY KEY,
+      email TEXT,
+      profile_name TEXT,
+      refresh_token TEXT,
+      obtained_at INTEGER
+    );
+
+    -- One row per browser session (random sid cookie -> user).
+    CREATE TABLE IF NOT EXISTS app_sessions (
+      sid TEXT PRIMARY KEY,
+      user_id TEXT,
+      created_at INTEGER,
+      last_seen INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      id TEXT,
       game_mode TEXT,
       range_name TEXT,
       begin_ts TEXT,
       ts TEXT,
       traced_shots INTEGER,
       has_lm_stats INTEGER,
-      raw_json TEXT
+      raw_json TEXT,
+      PRIMARY KEY (user_id, id)
     );
 
     CREATE TABLE IF NOT EXISTS shots (
-      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      id TEXT,
       session_id TEXT,
       shot_index INTEGER,
       game_mode TEXT,
@@ -61,21 +95,27 @@ export function migrate(db: Database.Database): void {
       spin_rate REAL,
       club_head_speed REAL,
       smash_factor REAL,
-      raw_json TEXT
+      raw_json TEXT,
+      PRIMARY KEY (user_id, id)
     );
 
     CREATE TABLE IF NOT EXISTS clubs (
-      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      id TEXT,
       club_display_name TEXT,
       category TEXT,
       nickname TEXT,
       display_order INTEGER,
       avg_carry REAL,
-      avg_total REAL
+      avg_total REAL,
+      PRIMARY KEY (user_id, id)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id);
-    CREATE INDEX IF NOT EXISTS idx_shots_club_display_name ON shots(club_display_name);
+    CREATE INDEX IF NOT EXISTS idx_shots_user ON shots(user_id);
+    CREATE INDEX IF NOT EXISTS idx_shots_user_session ON shots(user_id, session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_clubs_user ON clubs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id);
   `);
 }
 
