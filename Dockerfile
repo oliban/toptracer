@@ -3,7 +3,6 @@
 FROM mcr.microsoft.com/playwright:v1.48.0-jammy
 
 WORKDIR /app
-ENV NODE_ENV=production
 
 # Build toolchain for better-sqlite3 native module.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
@@ -21,7 +20,8 @@ RUN npm run build
 # Ensure the Chromium build matching the installed Playwright is present.
 RUN npx playwright install chromium
 
-ENV WEB_DIST=/app/packages/web/dist \
+ENV NODE_ENV=production \
+    WEB_DIST=/app/packages/web/dist \
     DATA_DIR=/data \
     HOST=0.0.0.0 \
     PORT=8080
