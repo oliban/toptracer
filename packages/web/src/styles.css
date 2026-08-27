@@ -928,3 +928,10 @@ body {
   margin: 4px 0 10px;
 }
 .filter-effect strong { color: var(--text); }
+
+.login-subtitle {
+  margin: -6px 0 4px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
