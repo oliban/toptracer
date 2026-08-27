@@ -1,0 +1,30 @@
+# fly.io config for Toptracer Range Analyzer.
+# Deploy: `fly launch --no-deploy` (first time, to create the app + volume) then `fly deploy`.
+# IMPORTANT: set a password so the public URL isn't open —
+#   fly secrets set APP_PASSWORD='choose-a-strong-password'
+app = "toptracer"
+primary_region = "arn"  # Stockholm
+
+[build]
+
+[env]
+  WEB_DIST = "/app/packages/web/dist"
+  DATA_DIR = "/data"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+# Persist the SQLite cache + refresh token across deploys/restarts.
+[[mounts]]
+  source = "toptracer_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"   # headless Chromium needs headroom

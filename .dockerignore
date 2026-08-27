@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+packages/*/data
+data
+.env
+.git
+.superpowers
+*.log
+docs/research
