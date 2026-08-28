@@ -56,7 +56,9 @@ export interface UserProfile {
 
 // ---- Filtering & gapping (stats module) ----
 
-export type DistanceMetric = 'flatCarry' | 'total';
+// 'consistency' is not a per-shot distance; it reshapes the gapping view to rank clubs by
+// overall tightness. The distance pipeline (filtering, dispersion axis) treats it as flatCarry.
+export type DistanceMetric = 'flatCarry' | 'total' | 'consistency';
 
 export interface FilterOptions {
   metric: DistanceMetric;
@@ -96,6 +98,9 @@ export interface ClubGap {
   dispersionWidth: number | null;// p75-p25 of offTargetLine
   medianCarry: number | null;    // median flatCarry of kept shots (for roll visualization)
   medianTotal: number | null;    // median total distance of kept shots
+  carryStd: number | null;       // std of kept flatCarry (± m) — distance consistency
+  offlineStd: number | null;     // std of kept offTargetLine (± m) — direction consistency
+  consistencyScore: number | null; // 0..100 overall tightness (higher = more consistent)
 }
 
 export interface FilteredShot extends Shot {

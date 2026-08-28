@@ -64,7 +64,19 @@ export default function FilterPanel({ filter, onChange, onSessionExpired, summar
           >
             Total
           </button>
+          <button
+            className={filter.metric === 'consistency' ? 'toggle active' : 'toggle'}
+            onClick={() => setMetric('consistency')}
+          >
+            Consistency
+          </button>
         </div>
+        {filter.metric === 'consistency' ? (
+          <p className="filter-help">
+            Ranks your clubs by <strong>overall tightness</strong> — combining distance spread
+            and left/right spread. Shown on the Gapping tab.
+          </p>
+        ) : null}
       </section>
 
       <section className="filter-group">

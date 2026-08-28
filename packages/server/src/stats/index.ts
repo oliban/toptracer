@@ -48,6 +48,7 @@ function groupKey(shot: Shot): string {
 }
 
 function metricValue(shot: Shot, metric: DistanceMetric): number | null {
+  // 'consistency' has no per-shot distance; the distance pipeline uses flatCarry for it.
   const v = metric === 'total' ? shot.total : shot.flatCarry;
   if (v === null || v === undefined || Number.isNaN(v)) return null;
   return v;
@@ -217,7 +218,19 @@ export function computeGapping(
           : null,
       medianCarry: carryValues.length ? median(carryValues) : null,
       medianTotal: totalValues.length ? median(totalValues) : null,
+      carryStd: carryValues.length >= 2 ? std(carryValues) : null,
+      offlineStd: lateralValues.length >= 2 ? std(lateralValues) : null,
+      consistencyScore: null, // filled below (needs medianCarry)
     };
+
+    // Overall tightness: combine distance scatter (carry CV) and direction scatter
+    // (offline std relative to carry) into a 0..100 score. Higher = tighter.
+    if (gap.carryStd != null && gap.medianCarry && gap.medianCarry > 0 && carryValues.length >= 3) {
+      const distCV = gap.carryStd / gap.medianCarry;
+      const dirScatter = gap.offlineStd != null ? gap.offlineStd / gap.medianCarry : 0;
+      const combined = Math.sqrt(distCV * distCV + dirScatter * dirScatter);
+      gap.consistencyScore = Math.max(0, Math.min(100, Math.round(100 - combined * 200)));
+    }
 
     clubGaps.push({ gap, club });
   }

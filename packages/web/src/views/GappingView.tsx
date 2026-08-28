@@ -15,9 +15,97 @@ function fmtBias(v: number | null): string {
   return `${Math.abs(v).toFixed(1)} ${side}`.trim();
 }
 
+function scoreClass(s: number | null): string {
+  if (s == null) return 'score-none';
+  if (s >= 80) return 'score-good';
+  if (s >= 60) return 'score-mid';
+  return 'score-bad';
+}
+
+/** Consistency ranking: clubs sorted by overall tightness score, with a bar chart. */
+function ConsistencyView({ result }: GappingViewProps) {
+  const ranked = [...result.clubs]
+    .filter((c) => c.keptShots > 0)
+    .sort((a, b) => (b.consistencyScore ?? -1) - (a.consistencyScore ?? -1));
+
+  return (
+    <div className="gapping-view">
+      <div className="card">
+        <div className="card-header">
+          <h2>Club consistency</h2>
+          <span className="card-sub">Overall tightness (distance + direction). Higher = more consistent.</span>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Club</th>
+                <th>Category</th>
+                <th className="num">Score</th>
+                <th className="num">Carry ± (m)</th>
+                <th className="num">Offline ± (m)</th>
+                <th className="num">Shots</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranked.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="muted center">No clubs match the current filter.</td>
+                </tr>
+              ) : (
+                ranked.map((c) => (
+                  <tr key={c.clubDisplayName}>
+                    <td className="strong">{c.clubDisplayName}</td>
+                    <td>{c.category ?? '—'}</td>
+                    <td className="num">
+                      <span className={`score-pill ${scoreClass(c.consistencyScore)}`}>
+                        {c.consistencyScore ?? '—'}
+                      </span>
+                    </td>
+                    <td className="num">±{fmt(c.carryStd)}</td>
+                    <td className="num">±{fmt(c.offlineStd)}</td>
+                    <td className="num">{c.keptShots}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h2>Consistency ranking</h2>
+          <span className="card-sub">Tightness score 0–100 per club</span>
+        </div>
+        <div className="card-pad">
+          <div className="consistency-bars">
+            {ranked.map((c) => (
+              <div key={c.clubDisplayName} className="cbar-row">
+                <span className="cbar-label">{c.clubDisplayName}</span>
+                <div className="cbar-track">
+                  <div
+                    className={`cbar-fill ${scoreClass(c.consistencyScore)}`}
+                    style={{ width: `${c.consistencyScore ?? 0}%` }}
+                  />
+                </div>
+                <span className="cbar-value">{c.consistencyScore ?? '—'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GappingView({ result }: GappingViewProps) {
+  if (result.appliedFilter.metric === 'consistency') {
+    return <ConsistencyView result={result} />;
+  }
+
   const { clubs } = result;
-  const metricLabel = result.appliedFilter.metric === 'flatCarry' ? 'Flat Carry' : 'Total';
+  const metricLabel = result.appliedFilter.metric === 'total' ? 'Total' : 'Flat Carry';
 
   return (
     <div className="gapping-view">

@@ -10,6 +10,8 @@ interface DispersionViewProps {
 }
 
 export default function DispersionView({ result, metric, onMetricChange }: DispersionViewProps) {
+  // Consistency has no distance axis — plot the scatter against flat carry.
+  const axisMetric = metric === 'consistency' ? 'flatCarry' : metric;
   // Session timestamps → per-shot recency (older shots render fainter).
   const [sessionTs, setSessionTs] = useState<Map<string, number>>(new Map());
   useEffect(() => {
@@ -100,13 +102,13 @@ export default function DispersionView({ result, metric, onMetricChange }: Dispe
       <div className="dispersion-controls">
         <div className="toggle-row">
           <button
-            className={metric === 'flatCarry' ? 'toggle active' : 'toggle'}
+            className={axisMetric === 'flatCarry' ? 'toggle active' : 'toggle'}
             onClick={() => onMetricChange('flatCarry')}
           >
             Flat Carry
           </button>
           <button
-            className={metric === 'total' ? 'toggle active' : 'toggle'}
+            className={axisMetric === 'total' ? 'toggle active' : 'toggle'}
             onClick={() => onMetricChange('total')}
           >
             Total
@@ -171,7 +173,7 @@ export default function DispersionView({ result, metric, onMetricChange }: Dispe
       <DispersionScatter
         shots={result.shots}
         activeClubs={activeClubs}
-        metric={metric}
+        metric={axisMetric}
         hideBadHits={hideBadHits}
         focusClub={focusClub}
         onFocusClub={setFocusClub}

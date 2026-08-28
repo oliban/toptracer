@@ -52,7 +52,7 @@ export interface UserProfile {
   speedUnit: string | null;
 }
 
-export type DistanceMetric = 'flatCarry' | 'total';
+export type DistanceMetric = 'flatCarry' | 'total' | 'consistency';
 
 export interface FilterOptions {
   metric: DistanceMetric;
@@ -90,6 +90,9 @@ export interface ClubGap {
   dispersionWidth: number | null; // p75-p25 of offTargetLine
   medianCarry: number | null; // median flatCarry of kept shots
   medianTotal: number | null; // median total distance of kept shots
+  carryStd: number | null;
+  offlineStd: number | null;
+  consistencyScore: number | null;
 }
 
 export interface FilteredShot extends Shot {
