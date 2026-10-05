@@ -21,8 +21,51 @@ const DEFAULT_FILTER: FilterOptions = {
 
 type Tab = 'overview' | 'gapping' | 'dispersion' | 'sessions';
 
+// Unticked sessions are remembered per Toptracer account in this browser. We store the
+// *excluded* ids so sessions synced later are included by default.
+const excludedKey = (userId: string | undefined) => `tt.excludedSessions.${userId ?? 'anon'}`;
+
+function loadExcluded(userId: string | undefined): string[] | undefined {
+  try {
+    const raw = localStorage.getItem(excludedKey(userId));
+    const ids = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(ids) && ids.length ? ids.filter((x): x is string => typeof x === 'string') : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveExcluded(userId: string | undefined, ids: string[] | undefined): void {
+  try {
+    if (ids?.length) localStorage.setItem(excludedKey(userId), JSON.stringify(ids));
+    else localStorage.removeItem(excludedKey(userId));
+  } catch {
+    // storage unavailable — the choice just won't survive a reload
+  }
+}
+
 export default function Dashboard({ profile, onLogout, onSessionExpired }: DashboardProps) {
-  const [filter, setFilter] = useState<FilterOptions>(DEFAULT_FILTER);
+  const [filter, setFilter] = useState<FilterOptions>(() => ({
+    ...DEFAULT_FILTER,
+    excludeSessionIds: loadExcluded(profile?.id),
+  }));
+
+  const userId = profile?.id;
+  const loadedFor = useRef(userId);
+  useEffect(() => {
+    if (loadedFor.current === userId) return;
+    loadedFor.current = userId;
+    setFilter((f) => ({ ...f, excludeSessionIds: loadExcluded(userId) }));
+  }, [userId]);
+
+  const setExcludedSessions = useCallback(
+    (ids: string[]) => {
+      const next = ids.length ? ids : undefined;
+      saveExcluded(userId, next);
+      setFilter((f) => ({ ...f, excludeSessionIds: next }));
+    },
+    [userId],
+  );
   const [result, setResult] = useState<GappingResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +194,10 @@ export default function Dashboard({ profile, onLogout, onSessionExpired }: Dashb
             filter={filter}
             onChange={setFilter}
             onSessionExpired={onSessionExpired}
+            onManageSessions={() => {
+              setTab('sessions');
+              setFiltersOpen(false);
+            }}
             summary={
               result
                 ? { excluded: result.shots.filter((s) => s.excluded).length, total: result.shots.length }
@@ -207,7 +254,10 @@ export default function Dashboard({ profile, onLogout, onSessionExpired }: Dashb
                 <OverviewView filter={filter} onSessionExpired={onSessionExpired} />
               ) : null}
               {tab === 'gapping' && result ? (
-                <GappingView result={result} />
+                <GappingView
+                  result={result}
+                  onMetricChange={(metric) => setFilter({ ...filter, metric })}
+                />
               ) : null}
               {tab === 'dispersion' && result ? (
                 <DispersionView
@@ -217,7 +267,13 @@ export default function Dashboard({ profile, onLogout, onSessionExpired }: Dashb
                 />
               ) : null}
               {tab === 'sessions' ? (
-                <SessionsView onSessionExpired={onSessionExpired} />
+                <SessionsView
+                  onSessionExpired={onSessionExpired}
+                  excluded={filter.excludeSessionIds ?? []}
+                  onExcludedChange={setExcludedSessions}
+                  dateFrom={filter.dateFrom}
+                  dateTo={filter.dateTo}
+                />
               ) : null}
             </>
           )}

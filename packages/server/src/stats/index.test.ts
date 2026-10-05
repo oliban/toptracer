@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeGapping, DEFAULT_FILTER } from './index.js';
-import type { Shot, Club, FilterOptions } from '../types.js';
+import { computeGapping, DEFAULT_FILTER, scopeToSessions } from './index.js';
+import type { Shot, Club, FilterOptions, Session } from '../types.js';
 
 let idCounter = 0;
 function shot(partial: Partial<Shot>): Shot {
@@ -310,5 +310,45 @@ describe('manual mode (user-defined bad hits)', () => {
     const c = res.shots.find((s) => s.id === 'c')!;
     expect(c.excluded).toBe(true);
     expect(c.excludeReason).toBe('tooWide');
+  });
+});
+
+describe('scopeToSessions — date range + excluded sessions', () => {
+  const sess = (id: string, beginTimestamp: string | null): Session => ({
+    id, gameMode: 'range', rangeName: null, beginTimestamp, timestamp: null,
+    tracedShots: null, hasLaunchMonitorStats: false,
+  });
+  const sessions = [
+    sess('A', '2026-09-01T10:00:00Z'),
+    sess('B', '2026-09-15T18:30:00Z'),
+    sess('C', '2026-10-01T09:00:00Z'),
+    sess('N', null),
+  ];
+
+  it('returns the filter unchanged when no session-level filter is set', () => {
+    const f = filter();
+    expect(scopeToSessions(f, sessions)).toBe(f);
+  });
+
+  it('treats a bare dateTo as the whole day (inclusive)', () => {
+    const res = scopeToSessions(filter({ dateFrom: '2026-09-15', dateTo: '2026-09-15' }), sessions);
+    expect(res.sessionIds).toEqual(['B']);
+  });
+
+  it('accepts full ISO bounds and drops untimestamped sessions', () => {
+    const res = scopeToSessions(filter({ dateFrom: '2026-09-10T00:00:00Z' }), sessions);
+    expect(res.sessionIds).toEqual(['B', 'C']);
+  });
+
+  it('removes excluded sessions and keeps undated ones when no date bound', () => {
+    const res = scopeToSessions(filter({ excludeSessionIds: ['B'] }), sessions);
+    expect(res.sessionIds).toEqual(['A', 'C', 'N']);
+  });
+
+  it('an empty resolved scope matches no shots', () => {
+    const shots = [shot({ sessionId: 'A' }), shot({ sessionId: 'B' })];
+    const scoped = scopeToSessions(filter({ dateFrom: '2027-01-01' }), sessions);
+    expect(scoped.sessionIds).toEqual([]);
+    expect(computeGapping(shots, [], scoped).shots).toHaveLength(0);
   });
 });

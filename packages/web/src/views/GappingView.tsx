@@ -1,8 +1,10 @@
-import type { GappingResult } from '../lib/types';
+import type { DistanceMetric, GappingResult } from '../lib/types';
 import GappingStrip from '../charts/GappingStrip';
+import DistanceCard from '../components/DistanceCard';
 
 interface GappingViewProps {
   result: GappingResult;
+  onMetricChange: (metric: DistanceMetric) => void;
 }
 
 function fmt(v: number | null, digits = 1): string {
@@ -23,7 +25,7 @@ function scoreClass(s: number | null): string {
 }
 
 /** Consistency ranking: clubs sorted by overall tightness score, with a bar chart. */
-function ConsistencyView({ result }: GappingViewProps) {
+function ConsistencyView({ result }: { result: GappingResult }) {
   const ranked = [...result.clubs]
     .filter((c) => c.keptShots > 0)
     .sort((a, b) => (b.consistencyScore ?? -1) - (a.consistencyScore ?? -1));
@@ -99,7 +101,7 @@ function ConsistencyView({ result }: GappingViewProps) {
   );
 }
 
-export default function GappingView({ result }: GappingViewProps) {
+export default function GappingView({ result, onMetricChange }: GappingViewProps) {
   if (result.appliedFilter.metric === 'consistency') {
     return <ConsistencyView result={result} />;
   }
@@ -109,6 +111,8 @@ export default function GappingView({ result }: GappingViewProps) {
 
   return (
     <div className="gapping-view">
+      <DistanceCard clubs={clubs} metric={result.appliedFilter.metric} onMetricChange={onMetricChange} />
+
       <div className="card">
         <div className="card-header">
           <h2>Club gapping — {metricLabel}</h2>

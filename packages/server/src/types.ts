@@ -63,9 +63,10 @@ export type DistanceMetric = 'flatCarry' | 'total' | 'consistency';
 export interface FilterOptions {
   metric: DistanceMetric;
   clubs?: string[];              // clubDisplayName allow-list; undefined = all
-  sessionIds?: string[];         // undefined = all
-  dateFrom?: string;             // ISO inclusive
-  dateTo?: string;               // ISO inclusive
+  sessionIds?: string[];         // undefined = all; [] = none
+  excludeSessionIds?: string[];  // sessions the user unticked on the Sessions tab
+  dateFrom?: string;             // ISO datetime or YYYY-MM-DD, inclusive
+  dateTo?: string;               // ISO datetime or YYYY-MM-DD (whole day), inclusive
   cleanHit: {
     enabled: boolean;
     mode: 'iqr' | 'manual';      // 'iqr' = statistical outlier trim; 'manual' = your own thresholds

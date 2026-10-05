@@ -6,10 +6,35 @@ interface FilterPanelProps {
   filter: FilterOptions;
   onChange: (next: FilterOptions) => void;
   onSessionExpired: (err: unknown) => boolean;
+  onManageSessions: () => void;
   summary?: { excluded: number; total: number } | null;
 }
 
-export default function FilterPanel({ filter, onChange, onSessionExpired, summary }: FilterPanelProps) {
+function ymd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return ymd(d);
+}
+
+const DATE_PRESETS: Array<{ label: string; from: () => string | undefined }> = [
+  { label: '30d', from: () => daysAgo(30) },
+  { label: '90d', from: () => daysAgo(90) },
+  { label: '1y', from: () => daysAgo(365) },
+  { label: 'All', from: () => undefined },
+];
+
+export default function FilterPanel({
+  filter,
+  onChange,
+  onSessionExpired,
+  onManageSessions,
+  summary,
+}: FilterPanelProps) {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubsError, setClubsError] = useState<string | null>(null);
 
@@ -267,6 +292,38 @@ export default function FilterPanel({ filter, onChange, onSessionExpired, summar
             }
           />
         </div>
+        <div className="preset-row">
+          {DATE_PRESETS.map((p) => {
+            const from = p.from();
+            const active = !filter.dateTo && filter.dateFrom === from;
+            return (
+              <button
+                key={p.label}
+                className={active ? 'preset active' : 'preset'}
+                onClick={() => onChange({ ...filter, dateFrom: from, dateTo: undefined })}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="filter-group">
+        <label className="filter-label">Sessions</label>
+        <p className="filter-help">
+          {filter.excludeSessionIds?.length ? (
+            <>
+              <strong>{filter.excludeSessionIds.length}</strong> session
+              {filter.excludeSessionIds.length > 1 ? 's' : ''} left out.{' '}
+            </>
+          ) : (
+            <>All sessions included. </>
+          )}
+          <button className="link-btn" onClick={onManageSessions}>
+            Choose sessions
+          </button>
+        </p>
       </section>
     </div>
   );

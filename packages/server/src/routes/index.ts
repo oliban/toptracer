@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import * as auth from '../auth/index.js';
 import { ToptracerGraphQLClient } from '../graphql/index.js';
 import { syncAll, getClubs, getSessions, getShots } from '../sync/index.js';
-import { computeGapping, DEFAULT_FILTER } from '../stats/index.js';
+import { computeGapping, DEFAULT_FILTER, scopeToSessions } from '../stats/index.js';
 import { computeOverview } from '../stats/overview.js';
 import {
   upsertUser,
@@ -128,15 +128,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: FilterOptions }>('/api/gapping', async (req, reply) => {
     const userId = currentUserId(req);
     if (!userId) return reply.code(401).send({ error: 'not logged in' });
-    const filter: FilterOptions = { ...DEFAULT_FILTER, ...(req.body ?? {}) };
+    const filter = scopeToSessions({ ...DEFAULT_FILTER, ...(req.body ?? {}) }, getSessions(userId));
     return computeGapping(getShots(userId), getClubs(userId), filter);
   });
 
   app.post<{ Body: FilterOptions }>('/api/overview', async (req, reply) => {
     const userId = currentUserId(req);
     if (!userId) return reply.code(401).send({ error: 'not logged in' });
-    const filter: FilterOptions = { ...DEFAULT_FILTER, ...(req.body ?? {}) };
+    const sessions = getSessions(userId);
+    const filter = scopeToSessions({ ...DEFAULT_FILTER, ...(req.body ?? {}) }, sessions);
     const g = computeGapping(getShots(userId), getClubs(userId), filter);
-    return computeOverview(g, getClubs(userId), getSessions(userId), Date.now());
+    return computeOverview(g, getClubs(userId), sessions, Date.now());
   });
 }

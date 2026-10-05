@@ -77,13 +77,27 @@ export function getSessions(): Promise<Session[]> {
   return request<Session[]>('/sessions');
 }
 
-export function gapping(filter: FilterOptions): Promise<GappingResult> {
-  return request<GappingResult>('/gapping', {
-    method: 'POST',
-    body: JSON.stringify(filter),
+/** Date inputs give YYYY-MM-DD; send the bounds as the user's local day, not UTC. */
+function localDayBound(ymd: string | undefined, end: boolean): string | undefined {
+  if (!ymd) return undefined;
+  const [y, m, d] = ymd.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return undefined;
+  const t = end ? new Date(y, m - 1, d + 1).getTime() - 1 : new Date(y, m - 1, d).getTime();
+  return new Date(t).toISOString();
+}
+
+function toWire(filter: FilterOptions): string {
+  return JSON.stringify({
+    ...filter,
+    dateFrom: localDayBound(filter.dateFrom, false),
+    dateTo: localDayBound(filter.dateTo, true),
   });
 }
 
+export function gapping(filter: FilterOptions): Promise<GappingResult> {
+  return request<GappingResult>('/gapping', { method: 'POST', body: toWire(filter) });
+}
+
 export function overview(filter: FilterOptions): Promise<OverviewResult> {
-  return request<OverviewResult>('/overview', { method: 'POST', body: JSON.stringify(filter) });
+  return request<OverviewResult>('/overview', { method: 'POST', body: toWire(filter) });
 }

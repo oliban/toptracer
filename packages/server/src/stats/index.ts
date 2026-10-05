@@ -3,6 +3,7 @@
 // and a per-shot excluded/kept breakdown (for scatter plots).
 
 import type {
+  Session,
   Shot,
   Club,
   FilterOptions,
@@ -17,6 +18,7 @@ export const DEFAULT_FILTER: FilterOptions = {
   metric: 'flatCarry',
   clubs: undefined,
   sessionIds: undefined,
+  excludeSessionIds: undefined,
   dateFrom: undefined,
   dateTo: undefined,
   cleanHit: {
@@ -54,17 +56,55 @@ function metricValue(shot: Shot, metric: DistanceMetric): number | null {
   return v;
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+
+/** Lower/upper bound (ms) for a date filter value. A bare YYYY-MM-DD covers that whole UTC day. */
+function boundMs(v: string | undefined, end: boolean): number | null {
+  if (!v) return null;
+  const t = Date.parse(v);
+  if (Number.isNaN(t)) return null;
+  return end && DATE_ONLY.test(v) ? t + DAY_MS - 1 : t;
+}
+
+/**
+ * Resolve the session-level filters (dateFrom/dateTo, excludeSessionIds) into an explicit
+ * sessionIds allow-list that computeGapping can apply. Returns opts unchanged when no
+ * session-level filter is set. Sessions without a timestamp are dropped once a date bound is set.
+ */
+export function scopeToSessions(opts: FilterOptions, sessions: Session[]): FilterOptions {
+  const from = boundMs(opts.dateFrom, false);
+  const to = boundMs(opts.dateTo, true);
+  const excluded = new Set(opts.excludeSessionIds ?? []);
+  if (from === null && to === null && excluded.size === 0) return opts;
+
+  const allow = opts.sessionIds ? new Set(opts.sessionIds) : null;
+  const ids = sessions
+    .filter((s) => {
+      if (excluded.has(s.id)) return false;
+      if (allow && !allow.has(s.id)) return false;
+      if (from === null && to === null) return true;
+      const iso = s.beginTimestamp ?? s.timestamp;
+      const t = iso ? Date.parse(iso) : NaN;
+      if (Number.isNaN(t)) return false;
+      if (from !== null && t < from) return false;
+      if (to !== null && t > to) return false;
+      return true;
+    })
+    .map((s) => s.id);
+  return { ...opts, sessionIds: ids };
+}
+
 export function computeGapping(
   shots: Shot[],
   clubs: Club[],
   opts: FilterOptions,
 ): GappingResult {
   // ---- 1. Pre-filter by clubs + sessionIds membership. ----
-  // NOTE: dateFrom/dateTo are accepted in FilterOptions but intentionally IGNORED
-  // here — a Shot carries no timestamp of its own; the caller pre-filters by session.
+  // NOTE: dateFrom/dateTo/excludeSessionIds are not applied here — a Shot carries no
+  // timestamp of its own. Callers resolve them into sessionIds via scopeToSessions().
   const clubAllow = opts.clubs && opts.clubs.length > 0 ? new Set(opts.clubs) : null;
-  const sessionAllow =
-    opts.sessionIds && opts.sessionIds.length > 0 ? new Set(opts.sessionIds) : null;
+  const sessionAllow = opts.sessionIds ? new Set(opts.sessionIds) : null;
 
   const preFiltered = shots.filter((s) => {
     // Drop unattributed shots (no club) — e.g. Launch Monitor sessions record no club per

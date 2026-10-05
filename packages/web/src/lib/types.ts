@@ -58,6 +58,7 @@ export interface FilterOptions {
   metric: DistanceMetric;
   clubs?: string[]; // clubDisplayName allow-list; undefined = all
   sessionIds?: string[]; // undefined = all
+  excludeSessionIds?: string[]; // unticked on the Sessions tab (remembered per user)
   dateFrom?: string; // ISO inclusive
   dateTo?: string; // ISO inclusive
   cleanHit: {
